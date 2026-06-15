@@ -422,6 +422,32 @@ def fetch_usdkrw():
         return None, None
 
 
+def fetch_news_for_holdings(holdings):
+    """보유 종목 중 미국 ticker만 yfinance.news fetch. 최대 5건."""
+    news = []
+    seen = set()
+    for ticker, h in holdings.items():
+        if not ticker.isalpha():
+            continue
+        try:
+            items = yf.Ticker(ticker).news[:3] or []
+            for it in items:
+                title = (it.get('title') or '').strip()
+                if not title or title in seen:
+                    continue
+                seen.add(title)
+                news.append({
+                    'title': title,
+                    'url': it.get('link') or '',
+                    'publisher': it.get('publisher') or '',
+                    'time': it.get('providerPublishTime') or 0,
+                })
+        except Exception as e:
+            print(f'  WARN news {ticker}: {e}')
+    news.sort(key=lambda x: x['time'], reverse=True)
+    return news[:5]
+
+
 def month_end_series(series):
     s = series.copy()
     s.index = pd.to_datetime(s.index)
