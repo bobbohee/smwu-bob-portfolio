@@ -39,6 +39,26 @@ INDEX_MAP = {
     '나스닥100': {'src': 'yf',        'code': '^NDX',   'img': 'images/idx_ndx.png',      'heading': '나스닥100 기준'},
 }
 
+TARGET_ANNUAL_RETURN = 0.15
+
+METRIC_KEYS = {
+    '총평가금액': 'eval',
+    '총수익':     'pl',
+    '수익률':     'pr',
+    'USD/KRW':   'fx',
+}
+GOAL_KEY = '연간 목표'
+IMAGE_HEADINGS = {
+    '시간추이':         'images/asset_trend.png',
+    '분류별 비율':      'images/pie.png',
+    '국가별 비중':      'images/country_pie.png',
+    '종목간 상관관계':  'images/correlation.png',
+    '코스피200 기준':   'images/idx_kospi200.png',
+    'SP500 기준':       'images/idx_sp500.png',
+    '나스닥100 기준':   'images/idx_ndx.png',
+}
+NEWS_HEADING = '보유주식 뉴스'
+
 GH_REPO   = os.environ.get('GH_REPO',   'bobbohee/smwu-bob-portfolio')
 GH_BRANCH = os.environ.get('GH_BRANCH', 'main')
 IMG_PATH  = 'images/pie.png'
@@ -583,6 +603,48 @@ def update_notion_idx_images(timestamp):
         )
         r.raise_for_status()
         print(f'  {idx_name} image patched: {block_id}')
+
+
+def list_children_recursive(block_id, max_depth=3, _depth=0):
+    """페이지 children 재귀 fetch — columns/column 안 children 평탄화."""
+    out = []
+    for b in list_children(block_id):
+        out.append(b)
+        if _depth < max_depth and b.get('has_children') and b.get('type') in ('column_list', 'column'):
+            out.extend(list_children_recursive(b['id'], max_depth, _depth + 1))
+    return out
+
+
+def find_blocks_by_keyword(children):
+    """children 리스트 → 키워드 매칭으로 callout/image/news paragraph block ID 추출."""
+    metrics = {}
+    goal_id = None
+    images = {}
+    news_para_ids = []
+    cur_heading = None
+    in_news = False
+    for b in children:
+        t = b['type']
+        if t == 'callout':
+            text = ''.join(x['plain_text'] for x in b['callout']['rich_text'])
+            matched = False
+            for kw, key in METRIC_KEYS.items():
+                if kw in text:
+                    metrics[key] = b['id']
+                    matched = True
+                    break
+            if not matched and GOAL_KEY in text:
+                goal_id = b['id']
+        elif t in ('heading_2', 'heading_3'):
+            txt = ''.join(x['plain_text'] for x in b[t]['rich_text'])
+            cur_heading = next((p for kw, p in IMAGE_HEADINGS.items() if kw in txt), None)
+            in_news = NEWS_HEADING in txt
+        elif t == 'image' and cur_heading:
+            images[cur_heading] = b['id']
+            cur_heading = None
+        elif t == 'paragraph' and in_news:
+            news_para_ids.append(b['id'])
+    return metrics, goal_id, images, news_para_ids
 
 
 def update_notion_image(img_url):
