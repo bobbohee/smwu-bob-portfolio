@@ -677,26 +677,26 @@ def patch_paragraph_link(block_id, title, url, publisher):
 def update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg):
     if 'eval' in metrics_ids:
         patch_callout(metrics_ids['eval'],
-                      f'💰 총평가금액  ₩{int(total_val):,}', color='blue_bg')
+                      f'💰 총평가금액  ₩{int(total_val):,}', color='blue_background')
     if 'pl' in metrics_ids:
         sign = '+' if total_pl >= 0 else ''
-        color = 'red_bg' if total_pl >= 0 else 'blue_bg'
+        color = 'red_background' if total_pl >= 0 else 'blue_background'
         patch_callout(metrics_ids['pl'],
                       f'📈 총수익  {sign}₩{int(total_pl):,}', color=color)
     if 'pr' in metrics_ids:
         sign = '+' if total_pr >= 0 else ''
-        color = 'red_bg' if total_pr >= 0 else 'blue_bg'
+        color = 'red_background' if total_pr >= 0 else 'blue_background'
         patch_callout(metrics_ids['pr'],
                       f'📊 수익률  {sign}{total_pr*100:.2f}%', color=color)
     if 'fx' in metrics_ids:
         if fx is None:
-            patch_callout(metrics_ids['fx'], '💵 USD/KRW  —', color='gray_bg')
+            patch_callout(metrics_ids['fx'], '💵 USD/KRW  —', color='gray_background')
         else:
             chg_pct = (fx_chg or 0) * 100
             sign = '+' if chg_pct >= 0 else ''
             patch_callout(metrics_ids['fx'],
                           f'💵 USD/KRW  ₩{fx:.0f} ({sign}{chg_pct:.2f}%)',
-                          color='yellow_bg')
+                          color='yellow_background')
 
 
 def update_goal_progress(goal_id, current_pr, target=TARGET_ANNUAL_RETURN):
@@ -708,7 +708,7 @@ def update_goal_progress(goal_id, current_pr, target=TARGET_ANNUAL_RETURN):
     sign = '+' if current_pr >= 0 else ''
     text = (f'🎯 연간 목표 +{int(target*100)}%  /  현재 {sign}{current_pr*100:.1f}%  '
             f'{bar}  {ratio*100:.0f}%')
-    color = 'green_bg' if ratio >= 0.8 else ('yellow_bg' if ratio >= 0.5 else 'red_bg')
+    color = 'green_background' if ratio >= 0.8 else ('yellow_background' if ratio >= 0.5 else 'red_background')
     patch_callout(goal_id, text, color=color)
 
 
