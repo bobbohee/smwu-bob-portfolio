@@ -279,6 +279,20 @@ def fetch_6m_close_yf(ticker):
     return yf.Ticker(ticker).history(period='7mo')['Close']
 
 
+def fetch_usdkrw():
+    """USD/KRW 환율 현재가 + 전일 대비 변화율."""
+    try:
+        h = yf.Ticker('KRW=X').history(period='5d')
+        if h.empty:
+            return None, None
+        cur = float(h['Close'].iloc[-1])
+        prev = float(h['Close'].iloc[-2]) if len(h) > 1 else cur
+        return cur, (cur - prev) / prev if prev else 0.0
+    except Exception as e:
+        print(f'  WARN 환율 fetch 실패: {e}')
+        return None, None
+
+
 def month_end_series(series):
     s = series.copy()
     s.index = pd.to_datetime(s.index)
