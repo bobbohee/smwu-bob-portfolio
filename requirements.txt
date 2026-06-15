@@ -1,5 +1,6 @@
 requests>=2.31
 pandas>=2.2
 matplotlib>=3.8
+seaborn>=0.13
 pykrx>=1.0.45
 yfinance>=0.2.40
