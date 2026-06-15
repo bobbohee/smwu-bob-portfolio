@@ -18,6 +18,7 @@ matplotlib.use('Agg')
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 import requests
 import yfinance as yf
 from pykrx import stock
@@ -351,6 +352,38 @@ def render_country_pie(holdings, out_path):
     for at in autotexts:
         at.set_color('white'); at.set_fontweight('bold')
     ax.set_title(f'국가별 비중 ({date.today().isoformat()})', fontsize=16, pad=20)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=120, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+
+
+def render_correlation_heatmap(holdings, out_path):
+    """보유 종목간 90일 수익률 상관계수 히트맵."""
+    stock_returns = {}
+    for ticker, h in holdings.items():
+        try:
+            if h['category'] in KRX_CATS:
+                close = fetch_6m_close_krx_stock(ticker).tail(90)
+            else:
+                close = fetch_6m_close_yf(ticker).tail(90)
+            r = close.pct_change().dropna()
+            if len(r) >= 30:
+                stock_returns[h['name']] = r
+        except Exception as e:
+            print(f'  WARN heatmap {ticker}: {e}')
+    if len(stock_returns) < 2:
+        print('  WARN 상관관계 데이터 부족 (< 2종목)')
+        return
+    df = pd.DataFrame({n: s.reset_index(drop=True) for n, s in stock_returns.items()})
+    corr = df.corr()
+    fig, ax = plt.subplots(figsize=(9, 7))
+    sns.heatmap(corr, annot=True, fmt='.2f', cmap='RdYlGn_r',
+                vmin=-1, vmax=1, square=True, ax=ax,
+                cbar_kws={'label': '상관계수'}, annot_kws={'size': 11})
+    ax.set_title(f'보유주식 상관관계 (90일, {date.today().isoformat()})', fontsize=15, pad=15)
+    plt.xticks(rotation=30, ha='right')
+    plt.yticks(rotation=0)
     plt.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     plt.savefig(out_path, dpi=120, bbox_inches='tight', facecolor='white')
