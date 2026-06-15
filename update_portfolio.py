@@ -50,6 +50,14 @@ H = {
 
 KRX_CATS = {'국내종목', '국내ETF', '국내ETF-해외'}
 
+COUNTRY_MAP = {
+    '국내종목': '한국',
+    '국내ETF': '한국',
+    '국내ETF-해외': '한국 (해외추종)',
+    '해외종목': '미국',
+    '해외ETF': '미국',
+}
+
 
 def query_ds(ds_id):
     out, cursor = [], None
@@ -323,6 +331,30 @@ def render_asset_trend_chart(out_path):
     plt.savefig(out_path, dpi=120, bbox_inches='tight', facecolor='white')
     plt.close(fig)
     print(f'  asset_trend 저장: {out_path} ({len(points)} points)')
+
+
+def render_country_pie(holdings, out_path):
+    """국가별 평가금액 비율 파이차트."""
+    country_total = defaultdict(float)
+    for h in holdings.values():
+        country = COUNTRY_MAP.get(h['category'], '기타')
+        country_total[country] += h['valuation']
+    labels = list(country_total.keys())
+    sizes  = list(country_total.values())
+    colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728']
+    fig, ax = plt.subplots(figsize=(8, 8))
+    _, _, autotexts = ax.pie(
+        sizes, labels=labels, autopct='%1.1f%%',
+        startangle=90, colors=colors[:len(labels)],
+        textprops={'fontsize': 13},
+    )
+    for at in autotexts:
+        at.set_color('white'); at.set_fontweight('bold')
+    ax.set_title(f'국가별 비중 ({date.today().isoformat()})', fontsize=16, pad=20)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=120, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
 
 
 def fetch_6m_close_krx_stock(ticker):
