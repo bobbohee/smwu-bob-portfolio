@@ -290,6 +290,41 @@ def render_pie(holdings, out_path):
         print(f'  {label}: W{int(size):,} ({size / sum(sizes) * 100:.1f}%)')
 
 
+def render_asset_trend_chart(out_path):
+    """총자산 DB 전체 history → 이중축 차트 (막대=평가금액, 라인=수익률)."""
+    rows = query_ds(DS_ASSET)
+    points = []
+    for p in rows:
+        pp = p['properties']
+        d = get_text(pp.get('작성일자'))
+        val = get_text(pp.get('총평가금액'))
+        ret = get_text(pp.get('총수익률'))
+        if d and val is not None:
+            points.append((d, float(val), float(ret or 0)))
+    if len(points) < 2:
+        print('  WARN 시간추이 데이터 부족 (< 2일)')
+        return
+    points.sort(key=lambda x: x[0])
+    dates  = [p[0] for p in points]
+    values = [p[1] for p in points]
+    rets   = [p[2] * 100 for p in points]
+
+    fig, ax1 = plt.subplots(figsize=(12, 5))
+    ax1.bar(dates, values, color='#4C72B0', alpha=0.55, label='총평가금액')
+    ax1.set_ylabel('총평가금액 (₩)')
+    ax1.tick_params(axis='x', rotation=45)
+    ax2 = ax1.twinx()
+    ax2.plot(dates, rets, color='#C44E52', linewidth=2.5, marker='o', markersize=7, label='총수익률')
+    ax2.set_ylabel('총수익률 (%)')
+    ax2.axhline(0, color='gray', linewidth=0.8, linestyle='--')
+    ax1.set_title(f'총자산 시간추이 ({date.today().isoformat()})', fontsize=15, pad=15)
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=120, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    print(f'  asset_trend 저장: {out_path} ({len(points)} points)')
+
+
 def fetch_6m_close_krx_stock(ticker):
     end = date.today()
     start = end - timedelta(days=210)
