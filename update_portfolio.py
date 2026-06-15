@@ -33,9 +33,9 @@ DS_ASSET   = '77ab4124-838b-4ded-bef9-f10f337a86ec'
 DS_WATCH   = 'cabfc928-42aa-4089-83cc-c58c1b13daa8'
 
 INDEX_MAP = {
-    '코스피200': {'src': 'krx', 'code': '1028',  'img': 'images/idx_kospi200.png', 'heading': '코스피200 기준'},
-    'S&P500':   {'src': 'yf',  'code': '^GSPC', 'img': 'images/idx_sp500.png',    'heading': 'SP500 기준'},
-    '나스닥100': {'src': 'yf',  'code': '^NDX',  'img': 'images/idx_ndx.png',      'heading': '나스닥100 기준'},
+    '코스피200': {'src': 'krx_stock', 'code': '102110', 'img': 'images/idx_kospi200.png', 'heading': '코스피200 기준'},
+    'S&P500':   {'src': 'yf',        'code': '^GSPC',  'img': 'images/idx_sp500.png',    'heading': 'SP500 기준'},
+    '나스닥100': {'src': 'yf',        'code': '^NDX',   'img': 'images/idx_ndx.png',      'heading': '나스닥100 기준'},
 }
 
 GH_REPO   = os.environ.get('GH_REPO',   'bobbohee/smwu-bob-portfolio')
@@ -334,7 +334,9 @@ def run_index_analysis(by_index):
             continue
         meta = INDEX_MAP[idx_name]
         try:
-            if meta['src'] == 'krx':
+            if meta['src'] == 'krx_stock':
+                idx_series = fetch_6m_close_krx_stock(meta['code'])
+            elif meta['src'] == 'krx_index':
                 idx_series = fetch_6m_close_krx_index(meta['code'])
             else:
                 idx_series = fetch_6m_close_yf(meta['code'])
