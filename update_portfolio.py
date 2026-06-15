@@ -647,6 +647,85 @@ def find_blocks_by_keyword(children):
     return metrics, goal_id, images, news_para_ids
 
 
+def patch_callout(block_id, text, color='default'):
+    body = {
+        'callout': {
+            'rich_text': [{'type': 'text', 'text': {'content': text}}],
+            'color': color,
+        }
+    }
+    r = requests.patch(f'{API}/blocks/{block_id}', headers=H, json=body)
+    r.raise_for_status()
+
+
+def patch_paragraph_link(block_id, title, url, publisher):
+    body = {
+        'paragraph': {
+            'rich_text': [
+                {'type': 'text', 'text': {'content': '• '}},
+                {'type': 'text', 'text': {'content': title, 'link': {'url': url}}} if url
+                else {'type': 'text', 'text': {'content': title}},
+                {'type': 'text', 'text': {'content': f'  —  {publisher}'},
+                 'annotations': {'italic': True, 'color': 'gray'}},
+            ]
+        }
+    }
+    r = requests.patch(f'{API}/blocks/{block_id}', headers=H, json=body)
+    r.raise_for_status()
+
+
+def update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg):
+    if 'eval' in metrics_ids:
+        patch_callout(metrics_ids['eval'],
+                      f'💰 총평가금액  ₩{int(total_val):,}', color='blue_bg')
+    if 'pl' in metrics_ids:
+        sign = '+' if total_pl >= 0 else ''
+        color = 'red_bg' if total_pl >= 0 else 'blue_bg'
+        patch_callout(metrics_ids['pl'],
+                      f'📈 총수익  {sign}₩{int(total_pl):,}', color=color)
+    if 'pr' in metrics_ids:
+        sign = '+' if total_pr >= 0 else ''
+        color = 'red_bg' if total_pr >= 0 else 'blue_bg'
+        patch_callout(metrics_ids['pr'],
+                      f'📊 수익률  {sign}{total_pr*100:.2f}%', color=color)
+    if 'fx' in metrics_ids:
+        if fx is None:
+            patch_callout(metrics_ids['fx'], '💵 USD/KRW  —', color='gray_bg')
+        else:
+            chg_pct = (fx_chg or 0) * 100
+            sign = '+' if chg_pct >= 0 else ''
+            patch_callout(metrics_ids['fx'],
+                          f'💵 USD/KRW  ₩{fx:.0f} ({sign}{chg_pct:.2f}%)',
+                          color='yellow_bg')
+
+
+def update_goal_progress(goal_id, current_pr, target=TARGET_ANNUAL_RETURN):
+    if not goal_id:
+        return
+    ratio = max(0.0, min(2.0, current_pr / target if target > 0 else 0))
+    filled = max(0, min(10, int(ratio * 10)))
+    bar = '█' * filled + '░' * (10 - filled)
+    sign = '+' if current_pr >= 0 else ''
+    text = (f'🎯 연간 목표 +{int(target*100)}%  /  현재 {sign}{current_pr*100:.1f}%  '
+            f'{bar}  {ratio*100:.0f}%')
+    color = 'green_bg' if ratio >= 0.8 else ('yellow_bg' if ratio >= 0.5 else 'red_bg')
+    patch_callout(goal_id, text, color=color)
+
+
+def update_news_paragraphs(news_para_ids, news_items):
+    for i, pid in enumerate(news_para_ids):
+        if i < len(news_items):
+            n = news_items[i]
+            patch_paragraph_link(pid, n['title'], n['url'], n['publisher'])
+        else:
+            body = {'paragraph': {'rich_text': [
+                {'type': 'text', 'text': {'content': '(뉴스 없음)'},
+                 'annotations': {'italic': True, 'color': 'gray'}}
+            ]}}
+            r = requests.patch(f'{API}/blocks/{pid}', headers=H, json=body)
+            r.raise_for_status()
+
+
 def update_notion_image(img_url):
     children = list_children(PAGE_ID)
     target = None
