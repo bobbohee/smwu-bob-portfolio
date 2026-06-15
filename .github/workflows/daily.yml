@@ -34,14 +34,15 @@ jobs:
           GH_BRANCH: ${{ github.ref_name }}
         run: python update_portfolio.py
 
-      - name: Commit and push chart
+      - name: Commit and push charts
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add images/pie.png
+          git pull --rebase
+          git add images/
           if git diff --staged --quiet; then
-            echo "No image changes"
+            echo "No chart changes"
           else
-            git commit -m "chore: update pie chart $(date -u +%Y-%m-%d)"
+            git commit -m "chore: update portfolio charts $(date -u +%Y-%m-%d)"
             git push
           fi
