@@ -769,27 +769,65 @@ def main():
     print('[2] 시세 fetch')
     enrich_with_prices(holdings)
 
-    print('[3] 보유주식 UPSERT')
+    print('[3] 리스크 지표')
+    compute_risk_metrics(holdings)
+
+    print('[4] 보유주식 UPSERT')
     upsert_holdings(holdings)
 
-    print('[4] 총자산 UPSERT')
+    print('[5] 총자산 UPSERT')
     upsert_asset(holdings)
+    total_val = sum(h['valuation'] for h in holdings.values())
+    total_buy = sum(h['avg_price'] * h['qty'] for h in holdings.values())
+    total_pl  = total_val - total_buy
+    total_pr  = (total_pl / total_buy) if total_buy else 0.0
 
-    print('[5] 파이차트 생성')
+    print('[6] 분류 파이차트')
     render_pie(holdings, IMG_PATH)
 
-    print('[6] Notion 이미지 URL 갱신')
-    ts = int(time.time())
-    img_url = f'https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/{IMG_PATH}?t={ts}'
-    update_notion_image(img_url)
+    print('[7] 환율 fetch')
+    fx, fx_chg = fetch_usdkrw()
+    if fx is not None:
+        print(f'  USD/KRW: {fx:.2f} ({(fx_chg or 0)*100:+.2f}%)')
+    else:
+        print('  USD/KRW: —')
 
-    print('[7] 관심종목 6개월 분석 + 지수 차트 생성')
+    print('[8] 시간추이 차트')
+    render_asset_trend_chart('images/asset_trend.png')
+
+    print('[9] 국가별 파이차트')
+    render_country_pie(holdings, 'images/country_pie.png')
+
+    print('[10] 상관관계 히트맵')
+    render_correlation_heatmap(holdings, 'images/correlation.png')
+
+    print('[11] 뉴스 fetch')
+    news_items = fetch_news_for_holdings(holdings)
+    print(f'  뉴스 {len(news_items)}건')
+
+    print('[12] 관심종목 6개월 분석')
     by_index = analyze_watchlist()
     results = run_index_analysis(by_index)
     upsert_watchlist_results(results)
 
-    print('[8] 지수 차트 Notion 갱신')
-    update_notion_idx_images(ts)
+    print('[13] Notion 페이지 블록 매핑')
+    ts = int(time.time())
+    children = list_children_recursive(PAGE_ID)
+    metrics_ids, goal_id, image_ids, news_para_ids = find_blocks_by_keyword(children)
+    print(f'  metrics={len(metrics_ids)}, goal={"OK" if goal_id else "—"}, '
+          f'images={len(image_ids)}, news={len(news_para_ids)}')
+
+    print('[14] 메트릭 카드 갱신')
+    update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg)
+
+    print('[15] 목표 진척률 갱신')
+    update_goal_progress(goal_id, total_pr, target=TARGET_ANNUAL_RETURN)
+
+    print('[16] 이미지 블록 갱신')
+    update_image_blocks(image_ids, ts)
+
+    print('[17] 뉴스 paragraph 갱신')
+    update_news_paragraphs(news_para_ids, news_items)
 
     print('done.')
 
