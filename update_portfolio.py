@@ -444,6 +444,7 @@ def fetch_usdkrw():
 
 def fetch_news_for_tickers(tickers):
     """미국 ticker(alpha)만 yfinance.news fetch. 최대 5건 dedup + 시간순."""
+    from datetime import datetime as _dt
     news = []
     seen = set()
     for ticker in tickers:
@@ -464,13 +465,22 @@ def fetch_news_for_tickers(tickers):
                 publisher = (content.get('provider') or {}).get('displayName') if isinstance(content.get('provider'), dict) else None
                 publisher = publisher or it.get('publisher') or ''
                 pub_time = it.get('providerPublishTime') or content.get('pubDate') or 0
+                pub_date = ''
                 if isinstance(pub_time, str):
-                    pub_time = 0
+                    try:
+                        pub_date = _dt.fromisoformat(pub_time.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                        pub_time = int(_dt.fromisoformat(pub_time.replace('Z', '+00:00')).timestamp())
+                    except Exception:
+                        pub_time = 0
+                elif isinstance(pub_time, (int, float)) and pub_time > 0:
+                    pub_date = _dt.utcfromtimestamp(pub_time).strftime('%Y-%m-%d')
                 news.append({
+                    'ticker': ticker,
                     'title': title,
                     'url': link,
                     'publisher': publisher,
                     'time': pub_time,
+                    'date': pub_date,
                 })
         except Exception as e:
             print(f'  WARN news {ticker}: {e}')
@@ -673,18 +683,32 @@ def patch_callout(block_id, text, color='default'):
     r.raise_for_status()
 
 
-def patch_paragraph_link(block_id, title, url, publisher):
-    body = {
-        'paragraph': {
-            'rich_text': [
-                {'type': 'text', 'text': {'content': '• '}},
-                {'type': 'text', 'text': {'content': title, 'link': {'url': url}}} if url
-                else {'type': 'text', 'text': {'content': title}},
-                {'type': 'text', 'text': {'content': f'  —  {publisher}'},
-                 'annotations': {'italic': True, 'color': 'gray'}},
-            ]
-        }
-    }
+def patch_paragraph_link(block_id, title, url, publisher, ticker='', date_str=''):
+    rich = [
+        {'type': 'text', 'text': {'content': '• '}},
+    ]
+    if ticker:
+        rich.append({
+            'type': 'text',
+            'text': {'content': f'[{ticker}] '},
+            'annotations': {'bold': True, 'color': 'blue'},
+        })
+    if url:
+        rich.append({'type': 'text', 'text': {'content': title, 'link': {'url': url}}})
+    else:
+        rich.append({'type': 'text', 'text': {'content': title}})
+    meta_parts = []
+    if publisher:
+        meta_parts.append(publisher)
+    if date_str:
+        meta_parts.append(date_str)
+    if meta_parts:
+        rich.append({
+            'type': 'text',
+            'text': {'content': '  —  ' + ' · '.join(meta_parts)},
+            'annotations': {'italic': True, 'color': 'gray'},
+        })
+    body = {'paragraph': {'rich_text': rich}}
     r = requests.patch(f'{API}/blocks/{block_id}', headers=H, json=body)
     r.raise_for_status()
 
@@ -692,25 +716,25 @@ def patch_paragraph_link(block_id, title, url, publisher):
 def update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg):
     if 'eval' in metrics_ids:
         patch_callout(metrics_ids['eval'],
-                      f'💰 총평가금액  ₩{int(total_val):,}', color='blue_background')
+                      f'총평가금액  ₩{int(total_val):,}', color='blue_background')
     if 'pl' in metrics_ids:
         sign = '+' if total_pl >= 0 else ''
         color = 'red_background' if total_pl >= 0 else 'blue_background'
         patch_callout(metrics_ids['pl'],
-                      f'📈 총수익  {sign}₩{int(total_pl):,}', color=color)
+                      f'총수익  {sign}₩{int(total_pl):,}', color=color)
     if 'pr' in metrics_ids:
         sign = '+' if total_pr >= 0 else ''
         color = 'red_background' if total_pr >= 0 else 'blue_background'
         patch_callout(metrics_ids['pr'],
-                      f'📊 수익률  {sign}{total_pr*100:.2f}%', color=color)
+                      f'수익률  {sign}{total_pr*100:.1f}%', color=color)
     if 'fx' in metrics_ids:
         if fx is None:
-            patch_callout(metrics_ids['fx'], '💵 USD/KRW  —', color='gray_background')
+            patch_callout(metrics_ids['fx'], 'USD/KRW  —', color='gray_background')
         else:
             chg_pct = (fx_chg or 0) * 100
             sign = '+' if chg_pct >= 0 else ''
             patch_callout(metrics_ids['fx'],
-                          f'💵 USD/KRW  ₩{fx:.0f} ({sign}{chg_pct:.2f}%)',
+                          f'USD/KRW  ₩{fx:.0f} ({sign}{chg_pct:.1f}%)',
                           color='yellow_background')
 
 
@@ -721,8 +745,8 @@ def update_goal_progress(goal_id, current_pr, target=TARGET_ANNUAL_RETURN):
     filled = max(0, min(10, int(ratio * 10)))
     bar = '█' * filled + '░' * (10 - filled)
     sign = '+' if current_pr >= 0 else ''
-    text = (f'🎯 연간 목표 +{int(target*100)}%  /  현재 {sign}{current_pr*100:.1f}%  '
-            f'{bar}  {ratio*100:.0f}%')
+    text = (f'연간 목표 +{int(target*100)}%  /  현재 {sign}{current_pr*100:.1f}%  '
+            f'{bar}  {ratio*100:.1f}%')
     color = 'green_background' if ratio >= 0.8 else ('yellow_background' if ratio >= 0.5 else 'red_background')
     patch_callout(goal_id, text, color=color)
 
@@ -731,7 +755,8 @@ def update_news_paragraphs(news_para_ids, news_items):
     for i, pid in enumerate(news_para_ids):
         if i < len(news_items):
             n = news_items[i]
-            patch_paragraph_link(pid, n['title'], n['url'], n['publisher'])
+            patch_paragraph_link(pid, n['title'], n['url'], n['publisher'],
+                                 ticker=n.get('ticker', ''), date_str=n.get('date', ''))
         else:
             body = {'paragraph': {'rich_text': [
                 {'type': 'text', 'text': {'content': '(뉴스 없음)'},
