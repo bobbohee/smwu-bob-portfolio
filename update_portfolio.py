@@ -726,6 +726,19 @@ def update_news_paragraphs(news_para_ids, news_items):
             r.raise_for_status()
 
 
+def update_image_blocks(image_ids, timestamp):
+    """{img_path: block_id} 매핑 → 모든 이미지 URL patch."""
+    for img_path, block_id in image_ids.items():
+        url = (f'https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/'
+               f'{img_path}?t={timestamp}')
+        r = requests.patch(
+            f'{API}/blocks/{block_id}', headers=H,
+            json={'image': {'external': {'url': url}}},
+        )
+        r.raise_for_status()
+        print(f'  image patched: {img_path} → {block_id}')
+
+
 def update_notion_image(img_url):
     children = list_children(PAGE_ID)
     target = None
