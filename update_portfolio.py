@@ -174,6 +174,31 @@ def enrich_with_prices(holdings):
         h['profit_rate'] = h['profit'] / (h['avg_price'] * h['qty']) if h['avg_price'] else 0
 
 
+def compute_risk_metrics(holdings):
+    """각 보유 종목 90일 일별 종가 → 30일/90일 변동성, MDD, Sharpe."""
+    for ticker, h in holdings.items():
+        try:
+            if h['category'] in KRX_CATS:
+                close = fetch_6m_close_krx_stock(ticker).tail(90)
+            else:
+                close = fetch_6m_close_yf(ticker).tail(90)
+            returns = close.pct_change().dropna()
+            if len(returns) < 5:
+                h['vol_30d'] = h['vol_90d'] = h['mdd'] = h['sharpe'] = None
+                continue
+            ann = 252 ** 0.5
+            h['vol_30d'] = float(returns.tail(30).std() * ann) if len(returns) >= 30 else None
+            h['vol_90d'] = float(returns.std() * ann)
+            cum = (1 + returns).cumprod()
+            peak = cum.cummax()
+            h['mdd'] = float(((cum - peak) / peak).min())
+            std = returns.std()
+            h['sharpe'] = float((returns.mean() * 252) / (std * ann)) if std > 0 else None
+        except Exception as e:
+            print(f'  WARN 리스크 {ticker}: {e}')
+            h['vol_30d'] = h['vol_90d'] = h['mdd'] = h['sharpe'] = None
+
+
 def upsert_holdings(holdings):
     existing = query_ds(DS_HOLDING)
     by_ticker = {get_text(p['properties'].get('티커')): p['id'] for p in existing}
@@ -186,6 +211,10 @@ def upsert_holdings(holdings):
             '평가금액': num(h['valuation']),
             '수익':     num(h['profit']),
             '수익률':   num(h['profit_rate']),
+            '30일변동성': num(h.get('vol_30d')),
+            '90일변동성': num(h.get('vol_90d')),
+            'MDD':       num(h.get('mdd')),
+            'Sharpe':    num(h.get('sharpe')),
         }
         if h['category']:
             props['분류'] = select(h['category'])
