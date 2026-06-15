@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
+import pandas as pd
 import requests
 import yfinance as yf
 from pykrx import stock
@@ -29,6 +30,13 @@ PAGE_ID    = '380940b8-828c-81a0-88f6-eadcff08e9c6'
 DS_TRADE   = 'dae5f91b-fdbe-4787-90d9-f6966a727a2c'
 DS_HOLDING = 'ae611b21-f20d-438a-a624-e81f34909de4'
 DS_ASSET   = '77ab4124-838b-4ded-bef9-f10f337a86ec'
+DS_WATCH   = 'cabfc928-42aa-4089-83cc-c58c1b13daa8'
+
+INDEX_MAP = {
+    '코스피200': {'src': 'krx', 'code': '1028',  'img': 'images/idx_kospi200.png', 'heading': '코스피200 기준'},
+    'S&P500':   {'src': 'yf',  'code': '^GSPC', 'img': 'images/idx_sp500.png',    'heading': 'SP500 기준'},
+    '나스닥100': {'src': 'yf',  'code': '^NDX',  'img': 'images/idx_ndx.png',      'heading': '나스닥100 기준'},
+}
 
 GH_REPO   = os.environ.get('GH_REPO',   'bobbohee/smwu-bob-portfolio')
 GH_BRANCH = os.environ.get('GH_BRANCH', 'main')
@@ -253,6 +261,159 @@ def render_pie(holdings, out_path):
         print(f'  {label}: W{int(size):,} ({size / sum(sizes) * 100:.1f}%)')
 
 
+def fetch_6m_close_krx_stock(ticker):
+    end = date.today()
+    start = end - timedelta(days=210)
+    df = stock.get_market_ohlcv_by_date(start.strftime('%Y%m%d'), end.strftime('%Y%m%d'), ticker)
+    return df['종가']
+
+
+def fetch_6m_close_krx_index(code):
+    end = date.today()
+    start = end - timedelta(days=210)
+    df = stock.get_index_ohlcv_by_date(start.strftime('%Y%m%d'), end.strftime('%Y%m%d'), code)
+    return df['종가']
+
+
+def fetch_6m_close_yf(ticker):
+    return yf.Ticker(ticker).history(period='7mo')['Close']
+
+
+def month_end_series(series):
+    s = series.copy()
+    s.index = pd.to_datetime(s.index)
+    return s.resample('ME').last().dropna().tail(7)
+
+
+def cum_returns(monthly_close):
+    base = monthly_close.iloc[0]
+    return [(v / base - 1) for v in monthly_close]
+
+
+def render_idx_chart(idx_name, stocks_monthly, idx_monthly, out_path):
+    fig, ax = plt.subplots(figsize=(11, 6))
+    months = [d.strftime('%Y-%m') for d in idx_monthly.index]
+    idx_cum = [r * 100 for r in cum_returns(idx_monthly)]
+    ax.plot(months, idx_cum, 'k-', linewidth=3.5, marker='o',
+            markersize=8, label=f'[지수] {idx_name}')
+    for stock_name, series in stocks_monthly.items():
+        cum = [r * 100 for r in cum_returns(series)]
+        ax.plot(months, cum, '-o', label=stock_name, linewidth=1.8, markersize=5)
+    ax.set_title(f'{idx_name} 기준 6개월 누적 수익률 ({date.today().isoformat()})',
+                 fontsize=15, pad=15)
+    ax.set_xlabel('월')
+    ax.set_ylabel('누적 수익률 (%)')
+    ax.legend(loc='best', fontsize=9, ncol=2)
+    ax.grid(True, alpha=0.3)
+    ax.axhline(0, color='gray', linewidth=0.8, linestyle='--')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=120, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+
+
+def analyze_watchlist():
+    rows = query_ds(DS_WATCH)
+    by_index = defaultdict(list)
+    for p in rows:
+        pp = p['properties']
+        name = get_text(pp.get('종목이름'))
+        ticker = get_text(pp.get('티커'))
+        idx = get_text(pp.get('기준지수'))
+        if not (name and ticker and idx):
+            continue
+        by_index[idx].append({'page_id': p['id'], 'name': name, 'ticker': ticker})
+    return by_index
+
+
+def run_index_analysis(by_index):
+    results = []
+    for idx_name, stocks in by_index.items():
+        if idx_name not in INDEX_MAP:
+            continue
+        meta = INDEX_MAP[idx_name]
+        try:
+            if meta['src'] == 'krx':
+                idx_series = fetch_6m_close_krx_index(meta['code'])
+            else:
+                idx_series = fetch_6m_close_yf(meta['code'])
+        except Exception as e:
+            print(f'  WARN 지수 {idx_name} fetch 실패: {e}')
+            continue
+        idx_monthly = month_end_series(idx_series)
+        if len(idx_monthly) < 2:
+            print(f'  WARN 지수 {idx_name} 월별 데이터 부족')
+            continue
+        idx_6m = cum_returns(idx_monthly)[-1]
+        stocks_monthly = {}
+        for s in stocks:
+            try:
+                if idx_name == '코스피200':
+                    series = fetch_6m_close_krx_stock(s['ticker'])
+                else:
+                    series = fetch_6m_close_yf(s['ticker'])
+                monthly = month_end_series(series)
+                if len(monthly) < 2:
+                    continue
+                stocks_monthly[s['name']] = monthly
+                stock_6m = cum_returns(monthly)[-1]
+                diff = stock_6m - idx_6m
+                judgement = '손절 검토' if diff <= -0.10 else '유지'
+                results.append({
+                    'page_id': s['page_id'],
+                    'name': s['name'],
+                    'ticker': s['ticker'],
+                    'stock_6m': stock_6m,
+                    'idx_6m': idx_6m,
+                    'diff': diff,
+                    'judgement': judgement,
+                })
+            except Exception as e:
+                print(f'  WARN {s["ticker"]} 분석 실패: {e}')
+        render_idx_chart(idx_name, stocks_monthly, idx_monthly, meta['img'])
+    return results
+
+
+def upsert_watchlist_results(results):
+    for r in results:
+        props = {
+            '6M수익률':     num(r['stock_6m']),
+            '지수6M수익률': num(r['idx_6m']),
+            '차이':         num(r['diff']),
+            '판정':         select(r['judgement']),
+        }
+        update_page(r['page_id'], props)
+        print(f"  {r['ticker']:8} {r['name']:12} 6M={r['stock_6m']*100:+6.1f}% "
+              f"diff={r['diff']*100:+6.1f}% [{r['judgement']}]")
+
+
+def update_notion_idx_images(timestamp):
+    children = list_children(PAGE_ID)
+    matched = None
+    targets = {}
+    for b in children:
+        if b['type'] == 'heading_3':
+            text = ''.join(t['plain_text'] for t in b['heading_3']['rich_text'])
+            matched = None
+            for idx_name, meta in INDEX_MAP.items():
+                if meta['heading'] in text:
+                    matched = idx_name
+                    break
+        elif matched and b['type'] == 'image':
+            targets[matched] = b['id']
+            matched = None
+    for idx_name, block_id in targets.items():
+        url = (f'https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/'
+               f'{INDEX_MAP[idx_name]["img"]}?t={timestamp}')
+        r = requests.patch(
+            f'{API}/blocks/{block_id}', headers=H,
+            json={'image': {'external': {'url': url}}},
+        )
+        r.raise_for_status()
+        print(f'  {idx_name} image patched: {block_id}')
+
+
 def update_notion_image(img_url):
     children = list_children(PAGE_ID)
     target = None
@@ -296,6 +457,14 @@ def main():
     ts = int(time.time())
     img_url = f'https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/{IMG_PATH}?t={ts}'
     update_notion_image(img_url)
+
+    print('[7] 관심종목 6개월 분석 + 지수 차트 생성')
+    by_index = analyze_watchlist()
+    results = run_index_analysis(by_index)
+    upsert_watchlist_results(results)
+
+    print('[8] 지수 차트 Notion 갱신')
+    update_notion_idx_images(ts)
 
     print('done.')
 
