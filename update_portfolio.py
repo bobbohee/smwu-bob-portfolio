@@ -442,30 +442,45 @@ def fetch_usdkrw():
         return None, None
 
 
-def fetch_news_for_holdings(holdings):
-    """보유 종목 중 미국 ticker만 yfinance.news fetch. 최대 5건."""
+def fetch_news_for_tickers(tickers):
+    """미국 ticker(alpha)만 yfinance.news fetch. 최대 5건 dedup + 시간순."""
     news = []
     seen = set()
-    for ticker, h in holdings.items():
-        if not ticker.isalpha():
+    for ticker in tickers:
+        if not ticker or not ticker.isalpha():
             continue
         try:
             items = yf.Ticker(ticker).news[:3] or []
             for it in items:
-                title = (it.get('title') or '').strip()
+                content = it.get('content') or it
+                title = (content.get('title') or it.get('title') or '').strip()
                 if not title or title in seen:
                     continue
                 seen.add(title)
+                link = (content.get('canonicalUrl') or {}).get('url') if isinstance(content.get('canonicalUrl'), dict) else None
+                link = link or content.get('clickThroughUrl') or it.get('link') or ''
+                if isinstance(link, dict):
+                    link = link.get('url', '')
+                publisher = (content.get('provider') or {}).get('displayName') if isinstance(content.get('provider'), dict) else None
+                publisher = publisher or it.get('publisher') or ''
+                pub_time = it.get('providerPublishTime') or content.get('pubDate') or 0
+                if isinstance(pub_time, str):
+                    pub_time = 0
                 news.append({
                     'title': title,
-                    'url': it.get('link') or '',
-                    'publisher': it.get('publisher') or '',
-                    'time': it.get('providerPublishTime') or 0,
+                    'url': link,
+                    'publisher': publisher,
+                    'time': pub_time,
                 })
         except Exception as e:
             print(f'  WARN news {ticker}: {e}')
-    news.sort(key=lambda x: x['time'], reverse=True)
+    news.sort(key=lambda x: x['time'] or 0, reverse=True)
     return news[:5]
+
+
+def fetch_news_for_holdings(holdings):
+    """하위호환 별칭 — 보유 종목 ticker만."""
+    return fetch_news_for_tickers(list(holdings.keys()))
 
 
 def month_end_series(series):
@@ -801,9 +816,11 @@ def main():
     print('[10] 상관관계 히트맵')
     render_correlation_heatmap(holdings, 'images/correlation.png')
 
-    print('[11] 뉴스 fetch')
-    news_items = fetch_news_for_holdings(holdings)
-    print(f'  뉴스 {len(news_items)}건')
+    print('[11] 뉴스 fetch (보유 + 관심종목 통합)')
+    watch_tickers = [get_text(p['properties'].get('티커')) for p in query_ds(DS_WATCH)]
+    all_tickers = list(holdings.keys()) + watch_tickers
+    news_items = fetch_news_for_tickers(all_tickers)
+    print(f'  뉴스 {len(news_items)}건 (대상 ticker {len(all_tickers)}개)')
 
     print('[12] 관심종목 6개월 분석')
     by_index = analyze_watchlist()
