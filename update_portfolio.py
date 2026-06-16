@@ -41,6 +41,10 @@ INDEX_MAP = {
 
 TARGET_ANNUAL_RETURN = 0.30
 
+CHART_STOCKS_FILTER = {
+    '코스피200': {'현대자동차', '삼성전자', 'SK하이닉스'},
+}
+
 METRIC_KEYS = {
     '총평가금액': 'eval',
     '총수익':     'pl',
@@ -605,7 +609,11 @@ def run_index_analysis(by_index):
                 })
             except Exception as e:
                 print(f'  WARN {s["ticker"]} 분석 실패: {e}')
-        render_idx_chart(idx_name, stocks_monthly, idx_monthly, meta['img'])
+        chart_stocks = stocks_monthly
+        allowed = CHART_STOCKS_FILTER.get(idx_name)
+        if allowed:
+            chart_stocks = {k: v for k, v in stocks_monthly.items() if k in allowed}
+        render_idx_chart(idx_name, chart_stocks, idx_monthly, meta['img'])
     return results
 
 
