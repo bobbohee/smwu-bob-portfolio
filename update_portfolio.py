@@ -45,17 +45,14 @@ METRIC_KEYS = {
     '총평가금액': 'eval',
     '총수익':     'pl',
     '수익률':     'pr',
-    'USD/KRW':   'fx',
 }
 GOAL_KEY = '연간 목표'
 IMAGE_HEADINGS = {
-    '시간추이':         'images/asset_trend.png',
-    '분류별 비율':      'images/pie.png',
-    '국가별 비중':      'images/country_pie.png',
+    '총자산':           'images/asset_trend.png',
     '종목간 상관관계':  'images/correlation.png',
-    '코스피200 기준':   'images/idx_kospi200.png',
-    'SP500 기준':       'images/idx_sp500.png',
-    '나스닥100 기준':   'images/idx_ndx.png',
+    'KOSPI200':         'images/idx_kospi200.png',
+    'S&P500':           'images/idx_sp500.png',
+    'NASDAQ100':        'images/idx_ndx.png',
 }
 NEWS_HEADING = '보유주식 뉴스'
 
@@ -679,7 +676,7 @@ def find_blocks_by_keyword(children):
                     break
             if not matched and GOAL_KEY in text:
                 goal_id = b['id']
-        elif t in ('heading_2', 'heading_3'):
+        elif t in ('heading_1', 'heading_2', 'heading_3'):
             txt = ''.join(x['plain_text'] for x in b[t]['rich_text'])
             cur_heading = next((p for kw, p in IMAGE_HEADINGS.items() if kw in txt), None)
             in_news = NEWS_HEADING in txt
@@ -841,53 +838,47 @@ def main():
     total_pl  = total_val - total_buy
     total_pr  = (total_pl / total_buy) if total_buy else 0.0
 
-    print('[6] 분류 파이차트')
-    render_pie(holdings, IMG_PATH)
-
-    print('[7] 환율 fetch')
+    print('[6] 환율 fetch')
     fx, fx_chg = fetch_usdkrw()
     if fx is not None:
         print(f'  USD/KRW: {fx:.2f} ({(fx_chg or 0)*100:+.2f}%)')
     else:
         print('  USD/KRW: —')
 
-    print('[8] 시간추이 차트')
+    print('[7] 시간추이 차트')
     render_asset_trend_chart('images/asset_trend.png')
 
-    print('[9] 국가별 파이차트')
-    render_country_pie(holdings, 'images/country_pie.png')
-
-    print('[10] 상관관계 히트맵')
+    print('[8] 상관관계 히트맵')
     render_correlation_heatmap(holdings, 'images/correlation.png')
 
-    print('[11] 뉴스 fetch (보유 + 관심종목 통합)')
+    print('[9] 뉴스 fetch (보유 + 관심종목 통합)')
     watch_tickers = [get_text(p['properties'].get('티커')) for p in query_ds(DS_WATCH)]
     all_tickers = list(holdings.keys()) + watch_tickers
     news_items = fetch_news_for_tickers(all_tickers)
     print(f'  뉴스 {len(news_items)}건 (대상 ticker {len(all_tickers)}개)')
 
-    print('[12] 관심종목 6개월 분석')
+    print('[10] 관심종목 6개월 분석')
     by_index = analyze_watchlist()
     results = run_index_analysis(by_index)
     upsert_watchlist_results(results)
 
-    print('[13] Notion 페이지 블록 매핑')
+    print('[11] Notion 페이지 블록 매핑')
     ts = int(time.time())
     children = list_children_recursive(PAGE_ID)
     metrics_ids, goal_id, image_ids, news_para_ids = find_blocks_by_keyword(children)
     print(f'  metrics={len(metrics_ids)}, goal={"OK" if goal_id else "—"}, '
           f'images={len(image_ids)}, news={len(news_para_ids)}')
 
-    print('[14] 메트릭 카드 갱신')
+    print('[12] 메트릭 카드 갱신')
     update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg)
 
-    print('[15] 목표 진척률 갱신')
+    print('[13] 목표 진척률 갱신')
     update_goal_progress(goal_id, total_pr, target=TARGET_ANNUAL_RETURN)
 
-    print('[16] 이미지 블록 갱신')
+    print('[14] 이미지 블록 갱신')
     update_image_blocks(image_ids, ts)
 
-    print('[17] 뉴스 paragraph 갱신')
+    print('[15] 뉴스 paragraph 갱신')
     update_news_paragraphs(news_para_ids, news_items)
 
     print('done.')
