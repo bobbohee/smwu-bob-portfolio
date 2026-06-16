@@ -132,6 +132,7 @@ def title(s):     return {'title': [{'text': {'content': str(s)}}]}
 def rich(s):      return {'rich_text': [{'text': {'content': str(s)}}]}
 def num(v):       return {'number': float(v) if v is not None else None}
 def select(name): return {'select': {'name': name}} if name else {'select': None}
+def date_prop(s): return {'date': {'start': s}} if s else {'date': None}
 
 
 def get_text(prop):
@@ -268,6 +269,7 @@ def upsert_asset(holdings):
     )
     props = {
         '작성일자':   title(today_str),
+        '날짜':       date_prop(today_str),
         '총평가금액': num(total_val),
         '총수익':     num(total_pl),
         '총수익률':   num(total_pr),
@@ -278,6 +280,22 @@ def upsert_asset(holdings):
     else:
         create_page(DS_ASSET, props)
         print(f'  CREATE 총자산 {today_str} W{int(total_val):,}')
+    backfill_asset_dates(asset_rows)
+
+
+def backfill_asset_dates(asset_rows):
+    n = 0
+    for p in asset_rows:
+        d_prop = p['properties'].get('날짜')
+        if d_prop and d_prop.get('date'):
+            continue
+        d_str = get_text(p['properties'].get('작성일자'))
+        if not d_str:
+            continue
+        update_page(p['id'], {'날짜': date_prop(d_str)})
+        n += 1
+    if n:
+        print(f'  BACKFILL 날짜 {n} rows')
 
 
 def render_pie(holdings, out_path):
