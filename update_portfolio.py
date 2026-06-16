@@ -131,6 +131,7 @@ def list_children(block_id):
 def title(s):     return {'title': [{'text': {'content': str(s)}}]}
 def rich(s):      return {'rich_text': [{'text': {'content': str(s)}}]}
 def num(v):       return {'number': float(v) if v is not None else None}
+def pct(v):       return {'number': round(float(v), 2) if v is not None else None}
 def select(name): return {'select': {'name': name}} if name else {'select': None}
 def date_prop(s): return {'date': {'start': s}} if s else {'date': None}
 
@@ -240,7 +241,7 @@ def upsert_holdings(holdings):
             '매입가':   num(h['avg_price']),
             '평가금액': num(h['valuation']),
             '수익':     num(h['profit']),
-            '수익률':   num(h['profit_rate']),
+            '수익률':   pct(h['profit_rate']),
             '30일변동성': num(h.get('vol_30d')),
             '90일변동성': num(h.get('vol_90d')),
             'MDD':       num(h.get('mdd')),
@@ -272,7 +273,7 @@ def upsert_asset(holdings):
         '날짜':       date_prop(today_str),
         '총평가금액': num(total_val),
         '총수익':     num(total_pl),
-        '총수익률':   num(total_pr),
+        '총수익률':   pct(total_pr),
     }
     if today_id:
         update_page(today_id, props)
@@ -612,9 +613,9 @@ def run_index_analysis(by_index):
 def upsert_watchlist_results(results):
     for r in results:
         props = {
-            '6M수익률':     num(r['stock_6m']),
-            '지수6M수익률': num(r['idx_6m']),
-            '차이':         num(r['diff']),
+            '6M수익률':     pct(r['stock_6m']),
+            '지수6M수익률': pct(r['idx_6m']),
+            '차이':         pct(r['diff']),
             '판정':         select(r['judgement']),
         }
         update_page(r['page_id'], props)
