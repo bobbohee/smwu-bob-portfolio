@@ -39,7 +39,7 @@ INDEX_MAP = {
     '나스닥100': {'src': 'yf',        'code': '^NDX',   'img': 'images/idx_ndx.png',      'heading': '나스닥100 기준'},
 }
 
-TARGET_ANNUAL_RETURN = 0.15
+TARGET_ANNUAL_RETURN = 0.30
 
 METRIC_KEYS = {
     '총평가금액': 'eval',
@@ -734,26 +734,15 @@ def patch_paragraph_link(block_id, title, url, publisher, ticker='', date_str=''
 def update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg):
     if 'eval' in metrics_ids:
         patch_callout(metrics_ids['eval'],
-                      f'총평가금액  ₩{int(total_val):,}', color='blue_background')
+                      f'총평가금액  ₩{int(total_val):,}', color='orange_background')
     if 'pl' in metrics_ids:
         sign = '+' if total_pl >= 0 else ''
-        color = 'red_background' if total_pl >= 0 else 'blue_background'
         patch_callout(metrics_ids['pl'],
-                      f'총수익  {sign}₩{int(total_pl):,}', color=color)
+                      f'총수익  {sign}₩{int(total_pl):,}', color='yellow_background')
     if 'pr' in metrics_ids:
         sign = '+' if total_pr >= 0 else ''
-        color = 'red_background' if total_pr >= 0 else 'blue_background'
         patch_callout(metrics_ids['pr'],
-                      f'수익률  {sign}{total_pr*100:.1f}%', color=color)
-    if 'fx' in metrics_ids:
-        if fx is None:
-            patch_callout(metrics_ids['fx'], 'USD/KRW  —', color='gray_background')
-        else:
-            chg_pct = (fx_chg or 0) * 100
-            sign = '+' if chg_pct >= 0 else ''
-            patch_callout(metrics_ids['fx'],
-                          f'USD/KRW  ₩{fx:.0f} ({sign}{chg_pct:.1f}%)',
-                          color='yellow_background')
+                      f'수익률  {sign}{total_pr*100:.1f}%', color='green_background')
 
 
 def update_goal_progress(goal_id, current_pr, target=TARGET_ANNUAL_RETURN):
@@ -765,8 +754,7 @@ def update_goal_progress(goal_id, current_pr, target=TARGET_ANNUAL_RETURN):
     sign = '+' if current_pr >= 0 else ''
     text = (f'연간 목표 +{int(target*100)}%  /  현재 {sign}{current_pr*100:.1f}%  '
             f'{bar}  {ratio*100:.1f}%')
-    color = 'green_background' if ratio >= 0.8 else ('yellow_background' if ratio >= 0.5 else 'red_background')
-    patch_callout(goal_id, text, color=color)
+    patch_callout(goal_id, text, color='brown_background')
 
 
 def update_news_paragraphs(news_para_ids, news_items):
