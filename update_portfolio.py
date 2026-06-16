@@ -128,7 +128,9 @@ def list_children(block_id):
 def title(s):     return {'title': [{'text': {'content': str(s)}}]}
 def rich(s):      return {'rich_text': [{'text': {'content': str(s)}}]}
 def num(v):       return {'number': float(v) if v is not None else None}
+def num1(v):      return {'number': round(float(v), 1) if v is not None else None}
 def pct(v):       return {'number': round(float(v), 2) if v is not None else None}
+def pct1(v):      return {'number': round(float(v), 3) if v is not None else None}
 def select(name): return {'select': {'name': name}} if name else {'select': None}
 def date_prop(s): return {'date': {'start': s}} if s else {'date': None}
 
@@ -239,10 +241,10 @@ def upsert_holdings(holdings):
             '평가금액': num(h['valuation']),
             '수익':     num(h['profit']),
             '수익률':   pct(h['profit_rate']),
-            '30일변동성': num(h.get('vol_30d')),
-            '90일변동성': num(h.get('vol_90d')),
-            'MDD':       num(h.get('mdd')),
-            'Sharpe':    num(h.get('sharpe')),
+            '30일변동성': pct1(h.get('vol_30d')),
+            '90일변동성': pct1(h.get('vol_90d')),
+            'MDD':       pct1(h.get('mdd')),
+            'Sharpe':    num1(h.get('sharpe')),
         }
         if h['category']:
             props['분류'] = select(h['category'])
@@ -270,7 +272,7 @@ def upsert_asset(holdings):
         '날짜':       date_prop(today_str),
         '총평가금액': num(total_val),
         '총수익':     num(total_pl),
-        '총수익률':   pct(total_pr),
+        '총수익률':   pct1(total_pr),
     }
     if today_id:
         update_page(today_id, props)
