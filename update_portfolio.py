@@ -285,6 +285,7 @@ def upsert_asset(holdings):
         create_page(DS_ASSET, props)
         print(f'  CREATE 총자산 {today_str} W{int(total_val):,}')
     backfill_asset_dates(asset_rows)
+    backfill_asset_pct(asset_rows)
 
 
 def backfill_asset_dates(asset_rows):
@@ -300,6 +301,22 @@ def backfill_asset_dates(asset_rows):
         n += 1
     if n:
         print(f'  BACKFILL 날짜 {n} rows')
+
+
+def backfill_asset_pct(asset_rows):
+    n = 0
+    for p in asset_rows:
+        prop = p['properties'].get('총수익률')
+        if not prop or prop.get('number') is None:
+            continue
+        old = prop['number']
+        new = round(old, 3)
+        if abs(old - new) < 1e-12:
+            continue
+        update_page(p['id'], {'총수익률': num(new)})
+        n += 1
+    if n:
+        print(f'  BACKFILL 총수익률 {n} rows')
 
 
 def render_pie(holdings, out_path):
