@@ -9,6 +9,7 @@ GitHub Actions cron 또는 로컬 수동 실행.
 import base64
 import os
 import subprocess
+import sys
 import time
 from collections import defaultdict
 from datetime import date, timedelta
@@ -302,6 +303,106 @@ def backfill_asset_dates(asset_rows):
         n += 1
     if n:
         print(f'  BACKFILL 날짜 {n} rows')
+
+
+def backfill_asset_history(start_date_str):
+    """매매일지 trades 기반 start_date~today 매일 총자산 row CREATE/UPDATE.
+    일회성 백테스트. 이미 row 있으면 UPDATE."""
+    start = date.fromisoformat(start_date_str)
+    end = date.today()
+    print(f'[backfill] {start} ~ {end} 총자산 history 생성')
+
+    trades = query_ds(DS_TRADE)
+    trade_list = []
+    for p in trades:
+        pp = p['properties']
+        ticker = get_text(pp.get('티커'))
+        d_str = get_text(pp.get('날짜'))
+        if not (ticker and d_str):
+            continue
+        trade_list.append({
+            'ticker': ticker,
+            'category': get_text(pp.get('분류')),
+            'date': d_str,
+            'side': get_text(pp.get('매수/매도')),
+            'qty': float(get_text(pp.get('수량')) or 0),
+            'price': float(get_text(pp.get('단가')) or 0),
+        })
+    print(f'  매매일지 {len(trade_list)}건 load')
+
+    ticker_cat = {}
+    for t in trade_list:
+        ticker_cat[t['ticker']] = t['category']
+    price_cache = {}
+    for ticker, cat in ticker_cat.items():
+        try:
+            if cat in KRX_CATS:
+                series = fetch_6m_close_krx_stock(ticker)
+            else:
+                series = fetch_6m_close_yf(ticker)
+            series.index = pd.to_datetime(series.index)
+            price_cache[ticker] = series
+            print(f'  {ticker} 시세 {len(series)}일 cache')
+        except Exception as e:
+            print(f'  WARN {ticker} 시세 fail: {e}')
+
+    existing_rows = query_ds(DS_ASSET)
+    existing_dates = {
+        get_text(p['properties'].get('작성일자')): p['id']
+        for p in existing_rows
+    }
+
+    d = start
+    while d <= end:
+        d_str = d.isoformat()
+        holdings = defaultdict(lambda: {'qty': 0.0, 'buy_qty': 0.0, 'buy_amt': 0.0})
+        for t in trade_list:
+            if t['date'] > d_str:
+                continue
+            h = holdings[t['ticker']]
+            if t['side'] == '매수':
+                h['qty'] += t['qty']
+                h['buy_qty'] += t['qty']
+                h['buy_amt'] += t['qty'] * t['price']
+            elif t['side'] == '매도':
+                h['qty'] -= t['qty']
+
+        total_val = 0.0
+        total_buy = 0.0
+        for ticker, h in holdings.items():
+            if h['qty'] <= 0:
+                continue
+            avg = h['buy_amt'] / h['buy_qty'] if h['buy_qty'] else 0
+            series = price_cache.get(ticker)
+            close = avg
+            if series is not None and len(series):
+                ts = pd.Timestamp(d) + pd.Timedelta(hours=23, minutes=59)
+                valid = series[series.index <= ts]
+                if len(valid):
+                    close = float(valid.iloc[-1])
+            total_val += h['qty'] * close
+            total_buy += avg * h['qty']
+
+        if total_val == 0:
+            d += timedelta(days=1)
+            continue
+        total_pl = total_val - total_buy
+        total_pr = total_pl / total_buy if total_buy else 0
+        props = {
+            '작성일자':   title(d_str),
+            '날짜':       date_prop(d_str),
+            '총평가금액': num(total_val),
+            '총수익':     num(total_pl),
+            '총수익률':   pct1(total_pr),
+        }
+        if d_str in existing_dates:
+            update_page(existing_dates[d_str], props)
+            print(f'  UPDATE 총자산 {d_str} W{int(total_val):,}')
+        else:
+            create_page(DS_ASSET, props)
+            print(f'  CREATE 총자산 {d_str} W{int(total_val):,}')
+        d += timedelta(days=1)
+    print('[backfill] done.')
 
 
 def backfill_asset_pct(asset_rows):
@@ -922,4 +1023,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == 'backfill':
+        start = sys.argv[2] if len(sys.argv) > 2 else '2026-06-13'
+        backfill_asset_history(start)
+    else:
+        main()

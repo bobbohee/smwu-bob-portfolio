@@ -1,0 +1,37 @@
+name: Backfill Asset History
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: '시작 일자 (YYYY-MM-DD). 이 날짜부터 today까지 총자산 row 생성.'
+        required: true
+        default: '2026-06-13'
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Nanum font
+        run: sudo apt-get update && sudo apt-get install -y fonts-nanum
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Run backfill
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_BRANCH: ${{ github.ref_name }}
+        run: python update_portfolio.py backfill ${{ inputs.start_date }}
