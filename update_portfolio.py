@@ -359,7 +359,7 @@ def render_pie(holdings, out_path):
         print(f'  {label}: W{int(size):,} ({size / sum(sizes) * 100:.1f}%)')
 
 
-def render_asset_trend_chart(out_path):
+def render_asset_trend_chart(out_path, today_str=None, today_val=None, today_pr=None):
     """총자산 DB 전체 history → 이중축 차트 (막대=평가금액, 라인=수익률)."""
     rows = query_ds(DS_ASSET)
     points = []
@@ -370,6 +370,9 @@ def render_asset_trend_chart(out_path):
         ret = get_text(pp.get('총수익률'))
         if d and val is not None:
             points.append((d, float(val), float(ret or 0)))
+    if today_str and today_val is not None and not any(p[0] == today_str for p in points):
+        points.append((today_str, float(today_val), float(today_pr or 0)))
+        print(f'  asset_trend today row 주입 보완: {today_str}')
     if len(points) < 2:
         print('  WARN 시간추이 데이터 부족 (< 2일)')
         return
@@ -386,7 +389,7 @@ def render_asset_trend_chart(out_path):
     ax2.plot(dates, rets, color='#C44E52', linewidth=2.5, marker='o', markersize=7, label='총수익률')
     ax2.set_ylabel('총수익률 (%)')
     ax2.axhline(0, color='gray', linewidth=0.8, linestyle='--')
-    ax1.set_title(f'총자산 시간추이 ({date.today().isoformat()})', fontsize=15, pad=15)
+    ax1.set_title(f'총자산 시간추이 ({date.today().isoformat()} / 최신 row {dates[-1]})', fontsize=15, pad=15)
     fig.tight_layout()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     plt.savefig(out_path, dpi=120, bbox_inches='tight', facecolor='white')
@@ -435,13 +438,21 @@ def render_correlation_heatmap(holdings, out_path):
     if len(stock_returns) < 2:
         print('  WARN 상관관계 데이터 부족 (< 2종목)')
         return
+    last_dates = []
+    for n, s in stock_returns.items():
+        if hasattr(s.index, 'strftime') or len(s.index):
+            try:
+                last_dates.append(pd.to_datetime(s.index[-1]).strftime('%Y-%m-%d'))
+            except Exception:
+                pass
+    last_str = f' / 데이터 ~{max(last_dates)}' if last_dates else ''
     df = pd.DataFrame({n: s.reset_index(drop=True) for n, s in stock_returns.items()})
     corr = df.corr()
     fig, ax = plt.subplots(figsize=(9, 7))
     sns.heatmap(corr, annot=True, fmt='.2f', cmap='RdYlGn_r',
                 vmin=-1, vmax=1, square=True, ax=ax,
                 cbar_kws={'label': '상관계수'}, annot_kws={'size': 11})
-    ax.set_title(f'보유주식 상관관계 (90일, {date.today().isoformat()})', fontsize=15, pad=15)
+    ax.set_title(f'보유주식 상관관계 (90일, {date.today().isoformat()}{last_str})', fontsize=15, pad=15)
     plt.xticks(rotation=30, ha='right')
     plt.yticks(rotation=0)
     plt.tight_layout()
@@ -869,7 +880,10 @@ def main():
         print('  USD/KRW: —')
 
     print('[7] 시간추이 차트')
-    render_asset_trend_chart('images/asset_trend.png')
+    render_asset_trend_chart('images/asset_trend.png',
+                             today_str=date.today().isoformat(),
+                             today_val=total_val,
+                             today_pr=total_pr)
 
     print('[8] 상관관계 히트맵')
     render_correlation_heatmap(holdings, 'images/correlation.png')
