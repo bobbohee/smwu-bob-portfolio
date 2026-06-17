@@ -49,6 +49,7 @@ METRIC_KEYS = {
     '총평가금액': 'eval',
     '총수익':     'pl',
     '수익률':     'pr',
+    '작성일자':   'date',
 }
 GOAL_KEY = '연간 목표'
 IMAGE_HEADINGS = {
@@ -58,7 +59,7 @@ IMAGE_HEADINGS = {
     'S&P500':           'images/idx_sp500.png',
     'NASDAQ100':        'images/idx_ndx.png',
 }
-NEWS_HEADING = '보유주식 뉴스'
+NEWS_HEADING = '뉴스'
 
 GH_REPO   = os.environ.get('GH_REPO',   'bobbohee/smwu-bob-portfolio')
 GH_BRANCH = os.environ.get('GH_BRANCH', 'main')
@@ -756,7 +757,10 @@ def patch_paragraph_link(block_id, title, url, publisher, ticker='', date_str=''
     r.raise_for_status()
 
 
-def update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg):
+def update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg, today_str):
+    if 'date' in metrics_ids:
+        patch_callout(metrics_ids['date'],
+                      f'작성일자: {today_str}', color='gray_background')
     if 'eval' in metrics_ids:
         patch_callout(metrics_ids['eval'],
                       f'총평가금액  ₩{int(total_val):,}', color='orange_background')
@@ -885,7 +889,7 @@ def main():
           f'images={len(image_ids)}, news={len(news_para_ids)}')
 
     print('[12] 메트릭 카드 갱신')
-    update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg)
+    update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg, date.today().isoformat())
 
     print('[13] 목표 진척률 갱신')
     update_goal_progress(goal_id, total_pr, target=TARGET_ANNUAL_RETURN)
