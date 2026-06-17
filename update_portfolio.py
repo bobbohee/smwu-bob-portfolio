@@ -780,7 +780,7 @@ def update_notion_idx_images(timestamp):
             targets[matched] = b['id']
             matched = None
     for idx_name, block_id in targets.items():
-        url = (f'https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/'
+        url = (f'https://cdn.jsdelivr.net/gh/{GH_REPO}@{GH_BRANCH}/'
                f'{INDEX_MAP[idx_name]["img"]}?t={timestamp}')
         r = requests.patch(
             f'{API}/blocks/{block_id}', headers=H,
@@ -920,7 +920,7 @@ def update_news_paragraphs(news_para_ids, news_items):
 def update_image_blocks(image_ids, timestamp):
     """{img_path: block_id} 매핑 → 모든 이미지 URL patch."""
     for img_path, block_id in image_ids.items():
-        url = (f'https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/'
+        url = (f'https://cdn.jsdelivr.net/gh/{GH_REPO}@{GH_BRANCH}/'
                f'{img_path}?t={timestamp}')
         r = requests.patch(
             f'{API}/blocks/{block_id}', headers=H,
