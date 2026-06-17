@@ -2,7 +2,9 @@ name: Daily Portfolio Update
 
 on:
   schedule:
-    # 매일 18:00 KST = 09:00 UTC. 장 마감(15:30 KST) 후 + 미국장 종가 일부 반영.
+    # 09:00 KST = 00:00 UTC. 미국장 마감 후 (KST 06:00 / EST 16:00).
+    - cron: '0 0 * * *'
+    # 18:00 KST = 09:00 UTC. 한국장 마감(15:30) 후.
     - cron: '0 9 * * *'
   workflow_dispatch:
 
