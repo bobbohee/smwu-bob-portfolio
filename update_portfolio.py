@@ -544,7 +544,7 @@ def cum_returns(monthly_close):
     return [(v / base - 1) for v in monthly_close]
 
 
-def render_idx_chart(idx_name, stocks_monthly, idx_monthly, out_path):
+def render_idx_chart(idx_name, stocks_monthly, idx_monthly, out_path, last_date=None):
     fig, ax = plt.subplots(figsize=(11, 6))
     months = [d.strftime('%Y-%m') for d in idx_monthly.index]
     idx_cum = [r * 100 for r in cum_returns(idx_monthly)]
@@ -553,7 +553,8 @@ def render_idx_chart(idx_name, stocks_monthly, idx_monthly, out_path):
     for stock_name, series in stocks_monthly.items():
         cum = [r * 100 for r in cum_returns(series)]
         ax.plot(months, cum, '-o', label=stock_name, linewidth=1.8, markersize=5)
-    ax.set_title(f'{idx_name} 기준 6개월 누적 수익률 ({date.today().isoformat()})',
+    last_str = f' / 데이터 ~{last_date}' if last_date else ''
+    ax.set_title(f'{idx_name} 기준 6개월 누적 수익률 ({date.today().isoformat()}{last_str})',
                  fontsize=15, pad=15)
     ax.set_xlabel('월')
     ax.set_ylabel('누적 수익률 (%)')
@@ -601,6 +602,8 @@ def run_index_analysis(by_index):
         if len(idx_monthly) < 2:
             print(f'  WARN 지수 {idx_name} 월별 데이터 부족')
             continue
+        print(f'  {idx_name} 지수 raw last: {idx_series.index[-1].strftime("%Y-%m-%d")} '
+              f'close={idx_series.iloc[-1]:.2f} (월말 {idx_monthly.index[-1].strftime("%Y-%m-%d")})')
         idx_6m = cum_returns(idx_monthly)[-1]
         stocks_monthly = {}
         for s in stocks:
@@ -631,7 +634,8 @@ def run_index_analysis(by_index):
         allowed = CHART_STOCKS_FILTER.get(idx_name)
         if allowed:
             chart_stocks = {k: v for k, v in stocks_monthly.items() if k in allowed}
-        render_idx_chart(idx_name, chart_stocks, idx_monthly, meta['img'])
+        render_idx_chart(idx_name, chart_stocks, idx_monthly, meta['img'],
+                         last_date=idx_series.index[-1].strftime('%Y-%m-%d'))
     return results
 
 
