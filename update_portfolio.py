@@ -7,6 +7,7 @@ GitHub Actions cron 또는 로컬 수동 실행.
 """
 
 import base64
+import json
 import os
 import subprocess
 import sys
@@ -64,7 +65,15 @@ NEWS_HEADING = '뉴스'
 
 GH_REPO   = os.environ.get('GH_REPO',   'bobbohee/smwu-bob-portfolio')
 GH_BRANCH = os.environ.get('GH_BRANCH', 'main')
+GH_SHA    = os.environ.get('GH_SHA', '').strip()
 IMG_PATH  = 'images/pie.png'
+
+STATE_PATH = os.environ.get('STATE_PATH', '/tmp/portfolio_state.json')
+
+
+def gh_ref():
+    """jsdelivr URL용 git ref. SHA 우선 — commit별 unique URL = cache 완전 회피."""
+    return GH_SHA or GH_BRANCH
 
 H = {
     'Authorization': f'Bearer {NOTION_TOKEN}',
@@ -594,55 +603,118 @@ def fetch_usdkrw():
         return None, None
 
 
-def fetch_news_for_tickers(tickers):
-    """미국 ticker(alpha)만 yfinance.news fetch. 최대 5건 dedup + 시간순."""
+def _fetch_news_us(ticker, seen):
+    """미국 alpha ticker — yfinance.news."""
     from datetime import datetime as _dt
+    out = []
+    try:
+        items = yf.Ticker(ticker).news[:3] or []
+        for it in items:
+            content = it.get('content') or it
+            title = (content.get('title') or it.get('title') or '').strip()
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            link = (content.get('canonicalUrl') or {}).get('url') if isinstance(content.get('canonicalUrl'), dict) else None
+            link = link or content.get('clickThroughUrl') or it.get('link') or ''
+            if isinstance(link, dict):
+                link = link.get('url', '')
+            publisher = (content.get('provider') or {}).get('displayName') if isinstance(content.get('provider'), dict) else None
+            publisher = publisher or it.get('publisher') or ''
+            pub_time = it.get('providerPublishTime') or content.get('pubDate') or 0
+            pub_date = ''
+            if isinstance(pub_time, str):
+                try:
+                    pub_date = _dt.fromisoformat(pub_time.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                    pub_time = int(_dt.fromisoformat(pub_time.replace('Z', '+00:00')).timestamp())
+                except Exception:
+                    pub_time = 0
+            elif isinstance(pub_time, (int, float)) and pub_time > 0:
+                pub_date = _dt.utcfromtimestamp(pub_time).strftime('%Y-%m-%d')
+            out.append({
+                'ticker': ticker,
+                'title': title,
+                'url': link,
+                'publisher': publisher,
+                'time': pub_time,
+                'date': pub_date,
+            })
+    except Exception as e:
+        print(f'  WARN news {ticker}: {e}')
+    return out
+
+
+def _fetch_news_kr(ticker, name, seen):
+    """한국 종목 — Google News RSS (`종목명 주가` 쿼리)."""
+    import xml.etree.ElementTree as ET
+    from datetime import datetime as _dt
+    from urllib.parse import quote
+    out = []
+    if not name:
+        return out
+    q = quote(f'{name} 주가')
+    url = f'https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko'
+    try:
+        r = requests.get(url, timeout=8,
+                         headers={'User-Agent': 'Mozilla/5.0'})
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+        items = root.findall('.//item')[:3]
+        for it in items:
+            title = (it.findtext('title') or '').strip()
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            link = (it.findtext('link') or '').strip()
+            pub_raw = (it.findtext('pubDate') or '').strip()
+            pub_time = 0
+            pub_date = ''
+            if pub_raw:
+                try:
+                    dt = _dt.strptime(pub_raw, '%a, %d %b %Y %H:%M:%S %Z')
+                    pub_time = int(dt.timestamp())
+                    pub_date = dt.strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+            publisher = ''
+            src = it.find('source')
+            if src is not None and src.text:
+                publisher = src.text.strip()
+            out.append({
+                'ticker': ticker,
+                'title': title,
+                'url': link,
+                'publisher': publisher,
+                'time': pub_time,
+                'date': pub_date,
+            })
+    except Exception as e:
+        print(f'  WARN news kr {ticker} ({name}): {e}')
+    return out
+
+
+def fetch_news_for_tickers(targets):
+    """뉴스 fetch — targets=[(ticker, name), ...]. 미국 alpha=yfinance, 그 외=Google RSS.
+
+    dedup(title) + 시간역순 sort. 최대 5건.
+    """
     news = []
     seen = set()
-    for ticker in tickers:
-        if not ticker or not ticker.isalpha():
+    for ticker, name in targets:
+        if not ticker:
             continue
-        try:
-            items = yf.Ticker(ticker).news[:3] or []
-            for it in items:
-                content = it.get('content') or it
-                title = (content.get('title') or it.get('title') or '').strip()
-                if not title or title in seen:
-                    continue
-                seen.add(title)
-                link = (content.get('canonicalUrl') or {}).get('url') if isinstance(content.get('canonicalUrl'), dict) else None
-                link = link or content.get('clickThroughUrl') or it.get('link') or ''
-                if isinstance(link, dict):
-                    link = link.get('url', '')
-                publisher = (content.get('provider') or {}).get('displayName') if isinstance(content.get('provider'), dict) else None
-                publisher = publisher or it.get('publisher') or ''
-                pub_time = it.get('providerPublishTime') or content.get('pubDate') or 0
-                pub_date = ''
-                if isinstance(pub_time, str):
-                    try:
-                        pub_date = _dt.fromisoformat(pub_time.replace('Z', '+00:00')).strftime('%Y-%m-%d')
-                        pub_time = int(_dt.fromisoformat(pub_time.replace('Z', '+00:00')).timestamp())
-                    except Exception:
-                        pub_time = 0
-                elif isinstance(pub_time, (int, float)) and pub_time > 0:
-                    pub_date = _dt.utcfromtimestamp(pub_time).strftime('%Y-%m-%d')
-                news.append({
-                    'ticker': ticker,
-                    'title': title,
-                    'url': link,
-                    'publisher': publisher,
-                    'time': pub_time,
-                    'date': pub_date,
-                })
-        except Exception as e:
-            print(f'  WARN news {ticker}: {e}')
+        if ticker.isalpha():
+            news.extend(_fetch_news_us(ticker, seen))
+        else:
+            news.extend(_fetch_news_kr(ticker, name, seen))
     news.sort(key=lambda x: x['time'] or 0, reverse=True)
     return news[:5]
 
 
 def fetch_news_for_holdings(holdings):
-    """하위호환 별칭 — 보유 종목 ticker만."""
-    return fetch_news_for_tickers(list(holdings.keys()))
+    """하위호환 별칭 — 보유 종목 (ticker, name) 기준."""
+    targets = [(t, h.get('name', '')) for t, h in holdings.items()]
+    return fetch_news_for_tickers(targets)
 
 
 def month_end_series(series):
@@ -780,7 +852,7 @@ def update_notion_idx_images(timestamp):
             targets[matched] = b['id']
             matched = None
     for idx_name, block_id in targets.items():
-        url = (f'https://cdn.jsdelivr.net/gh/{GH_REPO}@{GH_BRANCH}/'
+        url = (f'https://cdn.jsdelivr.net/gh/{GH_REPO}@{gh_ref()}/'
                f'{INDEX_MAP[idx_name]["img"]}?t={timestamp}')
         r = requests.patch(
             f'{API}/blocks/{block_id}', headers=H,
@@ -920,7 +992,7 @@ def update_news_paragraphs(news_para_ids, news_items):
 def update_image_blocks(image_ids, timestamp):
     """{img_path: block_id} 매핑 → 모든 이미지 URL patch."""
     for img_path, block_id in image_ids.items():
-        url = (f'https://cdn.jsdelivr.net/gh/{GH_REPO}@{GH_BRANCH}/'
+        url = (f'https://cdn.jsdelivr.net/gh/{GH_REPO}@{gh_ref()}/'
                f'{img_path}?t={timestamp}')
         r = requests.patch(
             f'{API}/blocks/{block_id}', headers=H,
@@ -952,7 +1024,12 @@ def update_notion_image(img_url):
     print(f'  Notion image patched: {target}')
 
 
-def main():
+def run_charts():
+    """Phase 1 — DB UPSERT + 차트 생성 + 뉴스 fetch. Notion 페이지 patch 안함.
+
+    state(총자산/수익/환율/뉴스 + 분석 결과)을 STATE_PATH에 dump.
+    workflow가 이 단계 후 차트 commit & push, 새 SHA로 phase 2 실행.
+    """
     print('[1] 매매일지 집계')
     holdings = aggregate_trades()
     print(f'  종목 {len(holdings)}개')
@@ -990,25 +1067,54 @@ def main():
     render_correlation_heatmap(holdings, 'images/correlation.png')
 
     print('[9] 뉴스 fetch (보유 + 관심종목 통합)')
-    watch_tickers = [get_text(p['properties'].get('티커')) for p in query_ds(DS_WATCH)]
-    all_tickers = list(holdings.keys()) + watch_tickers
-    news_items = fetch_news_for_tickers(all_tickers)
-    print(f'  뉴스 {len(news_items)}건 (대상 ticker {len(all_tickers)}개)')
+    watch_rows = [(get_text(p['properties'].get('티커')),
+                   get_text(p['properties'].get('종목이름')))
+                  for p in query_ds(DS_WATCH)]
+    targets = [(t, h['name']) for t, h in holdings.items() if t]
+    targets += [(t, n) for t, n in watch_rows if t]
+    news_items = fetch_news_for_tickers(targets)
+    print(f'  뉴스 {len(news_items)}건 (대상 ticker {len(targets)}개)')
 
     print('[10] 관심종목 6개월 분석')
     by_index = analyze_watchlist()
     results = run_index_analysis(by_index)
     upsert_watchlist_results(results)
 
+    state = {
+        'total_val': total_val,
+        'total_pl':  total_pl,
+        'total_pr':  total_pr,
+        'fx':        fx,
+        'fx_chg':    fx_chg,
+        'today_str': date.today().isoformat(),
+        'news_items': news_items,
+    }
+    with open(STATE_PATH, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False)
+    print(f'  state dump → {STATE_PATH}')
+
+
+def run_notion_sync():
+    """Phase 2 — STATE_PATH load + Notion 페이지 블록 patch.
+
+    GH_SHA env가 있으면 jsdelivr URL을 commit SHA로 pin → cache 100% 회피.
+    """
+    with open(STATE_PATH, 'r', encoding='utf-8') as f:
+        s = json.load(f)
+    total_val = s['total_val']; total_pl = s['total_pl']; total_pr = s['total_pr']
+    fx = s['fx']; fx_chg = s['fx_chg']
+    today_str = s['today_str']; news_items = s['news_items']
+
     print('[11] Notion 페이지 블록 매핑')
     ts = int(time.time())
+    print(f'  ref={gh_ref()} (SHA pin={"yes" if GH_SHA else "no — branch fallback"})')
     children = list_children_recursive(PAGE_ID)
     metrics_ids, goal_id, image_ids, news_para_ids = find_blocks_by_keyword(children)
     print(f'  metrics={len(metrics_ids)}, goal={"OK" if goal_id else "—"}, '
           f'images={len(image_ids)}, news={len(news_para_ids)}')
 
     print('[12] 메트릭 카드 갱신')
-    update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg, date.today().isoformat())
+    update_metric_cards(metrics_ids, total_val, total_pl, total_pr, fx, fx_chg, today_str)
 
     print('[13] 목표 진척률 갱신')
     update_goal_progress(goal_id, total_pr, target=TARGET_ANNUAL_RETURN)
@@ -1019,12 +1125,23 @@ def main():
     print('[15] 뉴스 paragraph 갱신')
     update_news_paragraphs(news_para_ids, news_items)
 
+
+def main():
+    run_charts()
+    run_notion_sync()
     print('done.')
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == 'backfill':
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ''
+    if cmd == 'backfill':
         start = sys.argv[2] if len(sys.argv) > 2 else '2026-06-13'
         backfill_asset_history(start)
+    elif cmd == 'charts':
+        run_charts()
+        print('charts done.')
+    elif cmd == 'notion':
+        run_notion_sync()
+        print('notion done.')
     else:
         main()

@@ -2,10 +2,10 @@ name: Daily Portfolio Update
 
 on:
   schedule:
-    # 09:00 KST = 00:00 UTC. 미국장 마감 후 (KST 06:00 / EST 16:00).
-    - cron: '0 0 * * *'
-    # 18:00 KST = 09:00 UTC. 한국장 마감(15:30) 후.
-    - cron: '0 9 * * *'
+    # 09:17 KST = 00:17 UTC. 정시 회피 (GitHub Actions cron delay 완화).
+    - cron: '17 0 * * *'
+    # 18:23 KST = 09:23 UTC.
+    - cron: '23 9 * * *'
   workflow_dispatch:
 
 permissions:
@@ -29,27 +29,40 @@ jobs:
       - name: Install Python deps
         run: pip install -r requirements.txt
 
-      - name: Run update_portfolio.py
+      - name: Phase 1 — DB UPSERT + 차트 생성
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GH_BRANCH: ${{ github.ref_name }}
-        run: python update_portfolio.py
+        run: python update_portfolio.py charts
 
       - name: Commit and push charts
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add images/
           if git diff --staged --quiet; then
             echo "No chart changes"
+            echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
             exit 0
           fi
           git commit -m "chore: update portfolio charts $(date -u +%Y-%m-%d)"
           for i in 1 2 3 4 5; do
-            git pull --rebase origin main && git push && exit 0
+            if git pull --rebase origin main && git push; then
+              echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+              exit 0
+            fi
             echo "push attempt $i failed, retrying..."
             sleep 5
           done
           echo "push failed after 5 attempts"
           exit 1
+
+      - name: Phase 2 — Notion 페이지 patch (new SHA로 jsdelivr pin)
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_BRANCH: ${{ github.ref_name }}
+          GH_SHA:    ${{ steps.commit.outputs.sha }}
+        run: python update_portfolio.py notion
