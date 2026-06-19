@@ -30,11 +30,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Phase 1 — DB UPSERT + 차트 생성
+        timeout-minutes: 10
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GH_BRANCH: ${{ github.ref_name }}
-        run: python update_portfolio.py charts
+          PYTHONUNBUFFERED: '1'
+        run: python -u update_portfolio.py charts
 
       - name: Commit and push charts
         id: commit
@@ -60,9 +62,11 @@ jobs:
           exit 1
 
       - name: Phase 2 — Notion 페이지 patch (new SHA로 jsdelivr pin)
+        timeout-minutes: 5
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GH_BRANCH: ${{ github.ref_name }}
           GH_SHA:    ${{ steps.commit.outputs.sha }}
-        run: python update_portfolio.py notion
+          PYTHONUNBUFFERED: '1'
+        run: python -u update_portfolio.py notion

@@ -9,11 +9,14 @@ GitHub Actions cron 또는 로컬 수동 실행.
 import base64
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
 from collections import defaultdict
 from datetime import date, timedelta
+
+socket.setdefaulttimeout(20)
 
 import matplotlib
 matplotlib.use('Agg')
